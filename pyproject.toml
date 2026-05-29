@@ -1,0 +1,23 @@
+[project]
+name = "insta-toon-bot"
+version = "0.1.0"
+description = "Standalone Telegram bot scaffold for administrative-law themed Instagram toon packages."
+requires-python = ">=3.11"
+dependencies = [
+  "openai>=1.0.0",
+  "pillow>=10.0.0",
+  "pydantic>=2.0.0",
+  "python-dotenv>=1.0.0",
+  "python-telegram-bot>=21.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0.0", "ruff>=0.5.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
