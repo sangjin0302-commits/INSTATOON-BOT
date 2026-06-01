@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Protocol
 
 from app.character_registry import character_registry_text
@@ -80,7 +81,11 @@ class OpenAITextProvider:
 
 
 def parse_storyboard_response(raw_response: str) -> ToonPackage:
-    data = json.loads(raw_response)
+    cleaned = raw_response.strip()
+    fence_match = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", cleaned, flags=re.DOTALL)
+    if fence_match:
+        cleaned = fence_match.group(1).strip()
+    data = json.loads(cleaned)
     return ToonPackage.model_validate(data)
 
 

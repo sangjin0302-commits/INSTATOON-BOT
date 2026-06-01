@@ -20,3 +20,12 @@ def test_parse_storyboard_response_validates_schema():
     )
 
     assert parse_storyboard_response(raw).panel_count == 5
+
+
+def test_parse_storyboard_response_accepts_fenced_json():
+    request = ToonRequest(user_id=1, idea="허가 절차", panel_count=4)
+    raw = FakeTextProvider().generate_json(
+        "Request JSON: " + request.model_dump_json() + "\nOutput schema shape: {}"
+    )
+
+    assert parse_storyboard_response(f"```json\n{raw}\n```").panel_count == 4

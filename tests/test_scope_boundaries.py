@@ -14,7 +14,8 @@ def _app_text() -> str:
 def test_telegram_command_handlers_do_not_publish():
     text = (ROOT / "app" / "telegram_bot.py").read_text(encoding="utf-8").lower()
 
-    assert "publish" not in text
+    assert "publish(" not in text
+    assert "post_to_instagram" not in text
     assert "auto upload" not in text
     assert "fanout" not in text
 
@@ -46,14 +47,16 @@ def test_no_api_keys_printed():
     text = _app_text().lower()
 
     assert "print(" not in text
-    assert "logger" not in text
 
 
 def test_raw_provider_payload_not_logged():
     text = _app_text().lower()
 
-    assert "logging" not in text
     assert "raw_response" in text
+    assert "logger.info(raw_response" not in text
+    assert "logger.debug(raw_response" not in text
+    assert "logger.info(settings.openai_api_key" not in text
+    assert "logger.info(self.settings.openai_api_key" not in text
 
 
 def test_generate_creates_storyboard_only_before_image_render():

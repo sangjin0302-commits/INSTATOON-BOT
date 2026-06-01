@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -8,7 +9,9 @@ from app.storage import save_package
 from app.toon_image_prompt_generator import generate_image_prompts
 from app.toon_models import ToonPackage, ToonRequest
 from app.toon_slide_renderer import render_slides
-from app.toon_storyboard_generator import generate_storyboard
+from app.toon_storyboard_generator import OpenAITextProvider, generate_storyboard
+
+logger = logging.getLogger(__name__)
 
 STYLE_OPTIONS = ["괴짜 행정툰", "풍자형", "실무형", "초현실 행정상담", "귀여운 캐릭터형"]
 
@@ -27,6 +30,11 @@ class ToonBotService:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.sessions: dict[int, SessionState] = {}
+
+    def text_provider(self):
+        if not self.settings.openai_api_key:
+            return None
+        return OpenAITextProvider(self.settings.openai_api_key, self.settings.openai_text_model)
 
     def session(self, user_id: int) -> SessionState:
         return self.sessions.setdefault(user_id, SessionState(panel_count=self.settings.default_panel_count))
@@ -48,9 +56,17 @@ class ToonBotService:
 
     def generate_storyboard_only(self, user_id: int) -> ToonPackage:
         request = self.build_request(user_id)
-        package = generate_storyboard(request)
+        logger.info("storyboard_generation_started request_id=%s model=%s", request.request_id, self.settings.openai_text_model)
+        package = generate_storyboard(request, self.text_provider())
         self.session(user_id).package = package
         save_package(package, self.settings.output_dir)
+        logger.info(
+            "storyboard_generation_completed request_id=%s source_needed=%s review_only=%s publish_ready=%s",
+            package.request_id,
+            package.source_needed,
+            package.review_only,
+            package.publish_ready,
+        )
         return package
 
     def render_current(self, user_id: int) -> list[Path]:
@@ -85,12 +101,15 @@ def create_application(settings: Settings):
     service = ToonBotService(settings)
 
     async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        logger.info("telegram_command command=start user_id=%s", update.effective_user.id)
         await update.message.reply_text("행정법 테마 인스타툰 패키지를 만드는 검토 전용 봇입니다.\n" + HELP_TEXT)
 
     async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        logger.info("telegram_command command=help user_id=%s", update.effective_user.id)
         await update.message.reply_text(HELP_TEXT)
 
     async def newtoon(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        logger.info("telegram_command command=newtoon user_id=%s", update.effective_user.id)
         service.reset(update.effective_user.id)
         context.user_data["awaiting"] = "idea"
         await update.message.reply_text("아이디어나 주제를 보내주세요.")
@@ -107,6 +126,7 @@ def create_application(settings: Settings):
         await update.message.reply_text("공식 출처 URL 또는 메모를 보내주세요. 없으면 source_needed=true로 표시됩니다.")
 
     async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        logger.info("telegram_command command=status user_id=%s", update.effective_user.id)
         state = service.session(update.effective_user.id)
         await update.message.reply_text(
             f"idea={bool(state.idea)}, style={state.style}, panels={state.panel_count}, "
@@ -118,6 +138,7 @@ def create_application(settings: Settings):
         await update.message.reply_text("세션을 초기화했습니다.")
 
     async def generate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        logger.info("telegram_command command=generate user_id=%s", update.effective_user.id)
         package = service.generate_storyboard_only(update.effective_user.id)
         lines = [package.toon_title, package.logline]
         lines += [f"{p.panel_number}. {p.caption}" for p in package.panels]
