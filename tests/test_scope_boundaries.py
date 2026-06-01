@@ -20,6 +20,14 @@ def test_telegram_command_handlers_do_not_publish():
     assert "fanout" not in text
 
 
+def test_ping_command_is_registered_and_documented():
+    text = (ROOT / "app" / "telegram_bot.py").read_text(encoding="utf-8")
+
+    assert "/ping - 실행 상태 확인" in text
+    assert '"ping": ping' in text
+    assert "pong: Instatoon bot is running" in text
+
+
 def test_no_instagram_api_call_exists():
     text = _app_text().lower()
 

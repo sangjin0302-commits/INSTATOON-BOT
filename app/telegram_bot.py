@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -87,11 +88,26 @@ HELP_TEXT = """사용법:
 /source - 공식 출처 URL 또는 메모
 /generate - 스토리보드만 생성
 /render - 이미지 슬라이드 렌더링
+/ping - 실행 상태 확인
 /status - 현재 상태
 /reset - 세션 초기화
 
 이 봇은 수동 인스타그램 업로드용 파일만 만들며 자동 게시, 승인, 팬아웃을 하지 않습니다.
 """
+
+
+COMMAND_NAMES = ("start", "help", "status", "newtoon", "style", "panels", "source", "generate", "render", "reset", "ping")
+TOKENISH_RE = re.compile(r"(bot)[A-Za-z0-9:_-]+|sk-[A-Za-z0-9_-]{20,}")
+
+
+def _redact(text: str) -> str:
+    return TOKENISH_RE.sub(r"\1<redacted>", text)
+
+
+def _log_command(command: str, update) -> None:
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    user_id = update.effective_user.id if update.effective_user else None
+    logger.info("telegram command received command=%s chat_id=%s user_id=%s", command, chat_id, user_id)
 
 
 def create_application(settings: Settings):
@@ -100,33 +116,46 @@ def create_application(settings: Settings):
 
     service = ToonBotService(settings)
 
+    async def post_init(application) -> None:
+        me = await application.bot.get_me()
+        logger.info("bot_identity bot_username=%s bot_id=%s", me.username, me.id)
+        await application.bot.delete_webhook(drop_pending_updates=False)
+        logger.info("telegram webhook cleared for polling drop_pending_updates=False")
+
+    async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+        error = context.error
+        logger.error("telegram error class=%s message=%s", error.__class__.__name__, _redact(str(error)))
+
     async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        logger.info("telegram_command command=start user_id=%s", update.effective_user.id)
+        _log_command("start", update)
         await update.message.reply_text("행정법 테마 인스타툰 패키지를 만드는 검토 전용 봇입니다.\n" + HELP_TEXT)
 
     async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        logger.info("telegram_command command=help user_id=%s", update.effective_user.id)
+        _log_command("help", update)
         await update.message.reply_text(HELP_TEXT)
 
     async def newtoon(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        logger.info("telegram_command command=newtoon user_id=%s", update.effective_user.id)
+        _log_command("newtoon", update)
         service.reset(update.effective_user.id)
         context.user_data["awaiting"] = "idea"
         await update.message.reply_text("아이디어나 주제를 보내주세요.")
 
     async def style(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        _log_command("style", update)
         await update.message.reply_text("스타일: " + " / ".join(STYLE_OPTIONS))
 
     async def panels(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        _log_command("panels", update)
         context.user_data["awaiting"] = "panels"
         await update.message.reply_text("컷 수를 4~8 사이 숫자로 보내주세요.")
 
     async def source(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        _log_command("source", update)
         context.user_data["awaiting"] = "source"
         await update.message.reply_text("공식 출처 URL 또는 메모를 보내주세요. 없으면 source_needed=true로 표시됩니다.")
 
     async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        logger.info("telegram_command command=status user_id=%s", update.effective_user.id)
+        _log_command("status", update)
         state = service.session(update.effective_user.id)
         await update.message.reply_text(
             f"idea={bool(state.idea)}, style={state.style}, panels={state.panel_count}, "
@@ -134,24 +163,31 @@ def create_application(settings: Settings):
         )
 
     async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        _log_command("reset", update)
         service.reset(update.effective_user.id)
         await update.message.reply_text("세션을 초기화했습니다.")
 
     async def generate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        logger.info("telegram_command command=generate user_id=%s", update.effective_user.id)
+        _log_command("generate", update)
         package = service.generate_storyboard_only(update.effective_user.id)
         lines = [package.toon_title, package.logline]
         lines += [f"{p.panel_number}. {p.caption}" for p in package.panels]
         await update.message.reply_text("\n".join(lines))
 
     async def render(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        _log_command("render", update)
         paths = service.render_current(update.effective_user.id)
         await update.message.reply_text("렌더 완료: " + ", ".join(path.name for path in paths))
+
+    async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        _log_command("ping", update)
+        await update.message.reply_text("pong: Instatoon bot is running")
 
     async def text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         state = service.session(update.effective_user.id)
         awaiting = context.user_data.get("awaiting")
         message = update.message.text.strip()
+        logger.info("telegram text received awaiting=%s chat_id=%s user_id=%s", awaiting, update.effective_chat.id, update.effective_user.id)
         if awaiting == "panels":
             state.panel_count = max(4, min(8, int(message)))
         elif awaiting == "source":
@@ -163,7 +199,8 @@ def create_application(settings: Settings):
         context.user_data["awaiting"] = None
         await update.message.reply_text("저장했습니다. /generate 로 스토리보드를 만들 수 있습니다.")
 
-    application = Application.builder().token(settings.telegram_toon_bot_token).build()
+    logger.info("telegram application building")
+    application = Application.builder().token(settings.telegram_toon_bot_token).post_init(post_init).build()
     for command, handler in {
         "start": start,
         "help": help_command,
@@ -175,7 +212,10 @@ def create_application(settings: Settings):
         "reset": reset,
         "generate": generate,
         "render": render,
+        "ping": ping,
     }.items():
         application.add_handler(CommandHandler(command, handler))
+    logger.info("telegram handlers registered commands=%s", ",".join(COMMAND_NAMES))
+    application.add_error_handler(error_handler)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text))
     return application
