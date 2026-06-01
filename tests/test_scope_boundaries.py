@@ -59,6 +59,14 @@ def test_raw_provider_payload_not_logged():
     assert "logger.info(self.settings.openai_api_key" not in text
 
 
+def test_third_party_http_logs_not_enabled_at_info():
+    text = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
+
+    assert 'logging.basicConfig(level=logging.WARNING' in text
+    assert 'logging.getLogger("httpx").setLevel(logging.WARNING)' in text
+    assert 'logging.getLogger("telegram").setLevel(logging.WARNING)' in text
+
+
 def test_generate_creates_storyboard_only_before_image_render():
     output_dir = Path("outputs") / f"test-{uuid4().hex}"
     service = ToonBotService(Settings(output_dir=output_dir))

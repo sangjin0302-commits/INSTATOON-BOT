@@ -7,7 +7,12 @@ from app.telegram_bot import create_application
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
+    logging.basicConfig(level=logging.WARNING, format="%(levelname)s:%(name)s:%(message)s")
+    logging.getLogger("app").setLevel(logging.INFO)
+    logging.getLogger("__main__").setLevel(logging.INFO)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("telegram").setLevel(logging.WARNING)
     settings = load_settings()
     if not settings.telegram_toon_bot_token:
         raise RuntimeError("TELEGRAM_TOON_BOT_TOKEN is required to run the Telegram bot.")
